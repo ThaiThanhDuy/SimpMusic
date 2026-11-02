@@ -13,13 +13,15 @@ Hướng dẫn build APK Android cho SimpMusic từ mã nguồn và cài lên đ
 
 ### Tải mã nguồn kèm submodule
 
-Thư mục `core/` là một git submodule (repo `maxrave-dev/core`). Nếu thư mục này trống, build sẽ báo lỗi `Configuring project ':loginSync' without an existing directory`.
+Thư mục `core/` là một git submodule. Trên nhánh `hnp`, submodule này trỏ tới fork `ThaiThanhDuy/core` (nhánh `hnp`), vì code nghe nhạc local có sửa trong `core`. Nếu thư mục này trống, build sẽ báo lỗi `Configuring project ':loginSync' without an existing directory`.
 
 ```bash
-git clone --recursive <url-repo>
+git clone -b hnp --recursive https://github.com/ThaiThanhDuy/SimpMusic.git
 # hoặc, nếu đã clone rồi:
 git submodule update --init --recursive
 ```
+
+Xem thêm mục 7 về cách commit và push khi có sửa trong `core`.
 
 ## 2. Chọn bản Full hay FOSS
 
@@ -153,3 +155,45 @@ adb install androidApp/build/outputs/apk/release/androidApp-arm64-v8a-release.ap
 | Cài báo "Ứng dụng chưa được cài đặt" / xung đột gói | Máy đang có bản SimpMusic ký bằng key khác (vd bản chính thức). Gỡ bản đó trước |
 | APK vẫn có đuôi `-unsigned` | Gradle không thấy `keystore.properties`. File phải nằm ở thư mục gốc project, đúng tên |
 | Hết bộ nhớ khi build | Đóng bớt ứng dụng, hoặc giảm `-Xmx` trong `gradle.properties` |
+
+## 7. Git: nhánh `hnp` và submodule `core`
+
+Code riêng của bạn nằm ở nhánh `hnp` trên hai repo:
+
+| Repo | Nhánh | Chứa gì |
+|---|---|---|
+| https://github.com/ThaiThanhDuy/SimpMusic | `hnp` | App: nhạc local, chia playlist theo thư mục/album/nghệ sĩ, ký bằng keystore riêng, file `BUILD.md` này |
+| https://github.com/ThaiThanhDuy/core | `hnp` | Fork của `maxrave-dev/core`: phần sửa để player phát được file trong máy |
+
+`.gitmodules` trỏ `core` sang fork của bạn, nên ai clone repo này cũng lấy được bản `core` có code nhạc local.
+
+### Remote trên máy
+
+- `origin` là repo gốc của maxrave, giữ nguyên để lấy code mới về.
+- `fork` là repo của bạn. Nhánh `hnp` đã theo dõi `fork/hnp`, nên chỉ cần `git push`.
+- Trong thư mục `core/` cũng vậy: `origin` là `maxrave-dev/core`, `fork` là `ThaiThanhDuy/core`, và đang ở nhánh `hnp`.
+
+### Khi sửa code trong `core/`
+
+Repo chính chỉ lưu con trỏ tới một commit của `core`, không lưu code của nó. Vì vậy phải push `core` **trước**, rồi mới commit con trỏ ở repo chính:
+
+```bash
+# 1. Commit và push trong core
+cd core
+git add -A
+git commit -m "mô tả thay đổi"
+git push
+cd ..
+
+# 2. Commit con trỏ core (cùng các sửa khác) ở repo chính
+git add core
+git commit -m "mô tả thay đổi"
+git push
+```
+
+Làm ngược lại (push repo chính trước) thì repo chính trỏ tới một commit `core` chưa có trên GitHub, và người clone về sẽ không lấy được.
+
+### Những file không đưa lên git
+
+- `simpmusic.jks` và `keystore.properties` (keystore và mật khẩu) nằm trong `.gitignore`. Không bao giờ commit hai file này.
+- File `.apk` ở thư mục gốc cũng bị bỏ qua (`/*.apk`).
