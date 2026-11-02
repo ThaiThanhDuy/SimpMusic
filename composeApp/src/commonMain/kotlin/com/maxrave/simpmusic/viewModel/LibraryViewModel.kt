@@ -27,6 +27,8 @@ import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.utils.LocalResource
 import com.maxrave.domain.utils.Resource
 import com.maxrave.domain.utils.isRadioPlaylistId
+import com.maxrave.simpmusic.expect.hasLocalMusicPermission
+import com.maxrave.simpmusic.expect.scanLocalSongs
 import com.maxrave.simpmusic.ui.screen.home.analytics.monthFullNameResource
 import com.maxrave.simpmusic.ui.screen.library.LibraryDynamicPlaylistType
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
@@ -137,6 +139,10 @@ class LibraryViewModel(
     private val _cachedPreview: MutableStateFlow<LibraryCollectionPreview?> = MutableStateFlow(null)
     val cachedPreview: StateFlow<LibraryCollectionPreview?> get() = _cachedPreview.asStateFlow()
 
+    /** The "On this device" card, read again each time the screen is shown, like [cachedPreview]. */
+    private val _localPreview: MutableStateFlow<LibraryCollectionPreview?> = MutableStateFlow(null)
+    val localPreview: StateFlow<LibraryCollectionPreview?> get() = _localPreview.asStateFlow()
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val youtubeLoggedIn = dataStoreManager.loggedIn.mapLatest { it == DataStoreManager.TRUE }
 
@@ -179,6 +185,15 @@ class LibraryViewModel(
             val songs = loadCachedSongs(cacheRepository, songRepository)
             // The same three the other cards fan out.
             _cachedPreview.value = LibraryCollectionPreview(songs.size, songs.mapNotNull { it.thumbnails }.take(3))
+        }
+    }
+
+    // Without the permission the card keeps its title alone; the list asks for it when opened.
+    fun refreshLocalPreview() {
+        if (!hasLocalMusicPermission()) return
+        viewModelScope.launch {
+            val songs = scanLocalSongs()
+            _localPreview.value = LibraryCollectionPreview(songs.size, songs.mapNotNull { it.song.thumbnails }.take(3))
         }
     }
 

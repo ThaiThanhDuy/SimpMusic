@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,8 +50,12 @@ import com.maxrave.domain.mediaservice.handler.QueueData
 import com.maxrave.domain.utils.LocalResource
 import com.maxrave.domain.utils.toArrayListTrack
 import com.maxrave.domain.utils.toTrack
+import com.maxrave.simpmusic.expect.LocalGroupBy
+import com.maxrave.simpmusic.expect.hasLocalMusicPermission
+import com.maxrave.simpmusic.expect.rememberLocalMusicPermissionRequest
 import com.maxrave.simpmusic.extension.getStringBlocking
 import com.maxrave.simpmusic.extension.ultraThinBarStyle
+import com.maxrave.simpmusic.ui.component.Chip
 import com.maxrave.simpmusic.ui.component.SearchBarExit
 import com.maxrave.simpmusic.ui.component.SearchBarEnter
 import com.maxrave.simpmusic.ui.component.AddToPlaylistModalBottomSheet
@@ -93,6 +98,8 @@ import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.album_length
+import simpmusic.composeapp.generated.resources.all
+import simpmusic.composeapp.generated.resources.albums
 import simpmusic.composeapp.generated.resources.artists
 import simpmusic.composeapp.generated.resources.cached
 import simpmusic.composeapp.generated.resources.downloaded
@@ -100,6 +107,9 @@ import simpmusic.composeapp.generated.resources.favorite
 import simpmusic.composeapp.generated.resources.followed
 import simpmusic.composeapp.generated.resources.liked_songs
 import simpmusic.composeapp.generated.resources.liked_songs_count
+import simpmusic.composeapp.generated.resources.local_files
+import simpmusic.composeapp.generated.resources.local_files_permission_denied
+import simpmusic.composeapp.generated.resources.local_folders
 import simpmusic.composeapp.generated.resources.lower_plays
 import simpmusic.composeapp.generated.resources.most_played
 import simpmusic.composeapp.generated.resources.search
@@ -144,6 +154,16 @@ fun LibraryDynamicPlaylistScreen(
     var tempDownloaded by remember { mutableStateOf(emptyList<SongEntity>()) }
     val cached by viewModel.listCachedSong.collectAsStateWithLifecycle()
     var tempCached by remember { mutableStateOf(emptyList<SongEntity>()) }
+    val localSongs by viewModel.listLocalSong.collectAsStateWithLifecycle()
+    var tempLocalSongs by remember { mutableStateOf(emptyList<SongEntity>()) }
+    val localGroupBy by viewModel.localGroupBy.collectAsStateWithLifecycle()
+    val localGroups by viewModel.localGroups.collectAsStateWithLifecycle()
+    val selectedLocalGroup by viewModel.selectedLocalGroup.collectAsStateWithLifecycle()
+    val localPermissionDenied = stringResource(Res.string.local_files_permission_denied)
+    val requestLocalMusicPermission =
+        rememberLocalMusicPermissionRequest { granted ->
+            if (granted) viewModel.getLocalSong() else viewModel.makeToast(localPermissionDenied)
+        }
     val monthlyRecap by viewModel.listMonthlyRecapSong.collectAsStateWithLifecycle()
     var tempMonthlyRecap by remember { mutableStateOf(emptyList<SongEntity>()) }
     val artistLiked by viewModel.listArtistLikedSong.collectAsStateWithLifecycle()
@@ -172,18 +192,23 @@ fun LibraryDynamicPlaylistScreen(
         if (parsed == LibraryDynamicPlaylistType.Cached) {
             viewModel.getCachedSong()
         }
+        // Files come and go outside the app, so they are listed afresh on every visit too.
+        if (parsed == LibraryDynamicPlaylistType.LocalFiles) {
+            if (hasLocalMusicPermission()) viewModel.getLocalSong() else requestLocalMusicPermission()
+        }
         // A top list opened from an older period. This screen gets its own analytics view model,
         // which starts on the latest period, so without this every older period opened as the
         // newest one.
         parsed.topListRange()?.let { (start, end) -> analyticsViewModel.showRange(start, end) }
     }
 
-    LaunchedEffect(query) {
+    LaunchedEffect(query, localSongs) {
         tempFavorite = favorite.filter { it.matches(query) }
         tempFollowed = followed.filter { it.name.contains(query, ignoreCase = true) }
         tempMostPlayed = mostPlayed.filter { it.matches(query) }
         tempDownloaded = downloaded.filter { it.matches(query) }
         tempCached = cached.filter { it.matches(query) }
+        tempLocalSongs = localSongs.filter { it.matches(query) }
         tempMonthlyRecap = monthlyRecap.filter { it.matches(query) }
         tempArtistLiked = artistLiked.filter { it.matches(query) }
         tempTopTracks =
@@ -213,6 +238,54 @@ fun LibraryDynamicPlaylistScreen(
             }
         }
         val type = LibraryDynamicPlaylistType.toType(type)
+        // Local songs split into playlists by folder, album or artist: the first row picks the
+        // split, the second the playlist. One group alone is the same list as "All", so the second
+        // row only shows from two.
+        if (type == LibraryDynamicPlaylistType.LocalFiles && localGroups.isNotEmpty()) {
+            item(key = "local_group_by") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    items(LocalGroupBy.entries) { groupBy ->
+                        Chip(
+                            isSelected = localGroupBy == groupBy,
+                            text =
+                                stringResource(
+                                    when (groupBy) {
+                                        LocalGroupBy.FOLDER -> Res.string.local_folders
+                                        LocalGroupBy.ALBUM -> Res.string.albums
+                                        LocalGroupBy.ARTIST -> Res.string.artists
+                                    },
+                                ),
+                        ) { viewModel.setLocalGroupBy(groupBy) }
+                    }
+                }
+            }
+        }
+        if (type == LibraryDynamicPlaylistType.LocalFiles && localGroups.size > 1) {
+            item(key = "local_groups") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.padding(vertical = 8.dp),
+                ) {
+                    item {
+                        Chip(
+                            isSelected = selectedLocalGroup == null,
+                            text = "${stringResource(Res.string.all)} · ${localGroups.sumOf { it.count }}",
+                        ) { viewModel.selectLocalGroup(null) }
+                    }
+                    items(localGroups, key = { it.key }) { group ->
+                        Chip(
+                            isSelected = selectedLocalGroup == group.key,
+                            text = "${group.name} · ${group.count}",
+                        ) { viewModel.selectLocalGroup(group.key) }
+                    }
+                }
+            }
+        }
         if (type == LibraryDynamicPlaylistType.Followed) {
             items(
                 if (query.isNotEmpty() && showSearchBar) {
@@ -393,6 +466,14 @@ fun LibraryDynamicPlaylistScreen(
                         }
                     }
 
+                    LibraryDynamicPlaylistType.LocalFiles -> {
+                        if (query.isNotEmpty() && showSearchBar) {
+                            tempLocalSongs
+                        } else {
+                            localSongs
+                        }
+                    }
+
                     LibraryDynamicPlaylistType.Favorite -> {
                         if (query.isNotEmpty() && showSearchBar) {
                             tempFavorite
@@ -534,6 +615,8 @@ fun LibraryDynamicPlaylistScreen(
                     stringResource(Res.string.album_length, downloaded.size.toString(), "")
                 LibraryDynamicPlaylistType.Cached ->
                     stringResource(Res.string.album_length, cached.size.toString(), "")
+                LibraryDynamicPlaylistType.LocalFiles ->
+                    stringResource(Res.string.album_length, localSongs.size.toString(), "")
                 LibraryDynamicPlaylistType.Followed ->
                     "${followed.size} ${stringResource(Res.string.artists)}"
                 is LibraryDynamicPlaylistType.MonthlyRecap ->
@@ -692,6 +775,10 @@ fun LibraryDynamicPlaylistScreen(
                                     (if (query.isNotEmpty() && showSearchBar) tempCached else cached)
                                         .map { it.videoId }
 
+                                LibraryDynamicPlaylistType.LocalFiles ->
+                                    (if (query.isNotEmpty() && showSearchBar) tempLocalSongs else localSongs)
+                                        .map { it.videoId }
+
                                 LibraryDynamicPlaylistType.Favorite ->
                                     (if (query.isNotEmpty() && showSearchBar) tempFavorite else favorite)
                                         .map { it.videoId }
@@ -767,6 +854,9 @@ sealed class LibraryDynamicPlaylistType {
      */
     data object Cached : LibraryDynamicPlaylistType()
 
+    /** Songs on the device's own storage, read from MediaStore. Android only. */
+    data object LocalFiles : LibraryDynamicPlaylistType()
+
     /**
      * The three top lists carry the period they were opened for, so the list on screen is the one
      * the user was looking at rather than whatever period this screen's own view model starts on.
@@ -836,6 +926,7 @@ sealed class LibraryDynamicPlaylistType {
             MostPlayed -> Res.string.most_played
             Downloaded -> Res.string.downloaded
             Cached -> Res.string.cached
+            LocalFiles -> Res.string.local_files
             is TopAlbums -> Res.string.your_top_albums
             is TopArtists -> Res.string.your_top_artists
             is TopTracks -> Res.string.your_top_tracks
@@ -907,6 +998,7 @@ sealed class LibraryDynamicPlaylistType {
             MostPlayed -> "most_played"
             Downloaded -> "downloaded"
             Cached -> "cached"
+            LocalFiles -> "local_files"
             is TopAlbums -> TOP_ALBUMS + periodSuffix()
             is TopArtists -> TOP_ARTISTS + periodSuffix()
             is TopTracks -> TOP_TRACKS + periodSuffix()
@@ -930,6 +1022,7 @@ sealed class LibraryDynamicPlaylistType {
                 "most_played" -> MostPlayed
                 "downloaded" -> Downloaded
                 "cached" -> Cached
+                "local_files" -> LocalFiles
                 TOP_ALBUMS -> TopAlbums()
                 TOP_ARTISTS -> TopArtists()
                 TOP_TRACKS -> TopTracks()

@@ -147,10 +147,14 @@ fun LibraryScreen(
     val recentlyAdded by viewModel.recentlyAdded.collectAsStateWithLifecycle()
     val libraryOverview by viewModel.libraryOverview.collectAsStateWithLifecycle()
     val cachedPreview by viewModel.cachedPreview.collectAsStateWithLifecycle()
+    val localPreview by viewModel.localPreview.collectAsStateWithLifecycle()
     // The player cache is no table to observe, so the Cached card is read again each time the
     // screen is shown — coming back from the list after removing a song included.
     if (getPlatform() == Platform.Android) {
-        LaunchedEffect(Unit) { viewModel.refreshCachedPreview() }
+        LaunchedEffect(Unit) {
+            viewModel.refreshCachedPreview()
+            viewModel.refreshLocalPreview()
+        }
     }
 
     val selectionState = rememberSongSelectionState()
@@ -279,7 +283,7 @@ fun LibraryScreen(
                         state = state,
                     ) {
                         item {
-                            LibraryTilingBox(navController, libraryOverview, cachedPreview)
+                            LibraryTilingBox(navController, libraryOverview, cachedPreview, localPreview)
                         }
 
                         // The reading is drawn from playback_event, so the card follows the same

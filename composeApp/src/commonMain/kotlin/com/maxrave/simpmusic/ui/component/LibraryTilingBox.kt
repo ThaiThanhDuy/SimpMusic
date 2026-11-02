@@ -54,12 +54,13 @@ import simpmusic.composeapp.generated.resources.followed
 import simpmusic.composeapp.generated.resources.library_artist_count
 import simpmusic.composeapp.generated.resources.library_favorite_empty_hint
 import simpmusic.composeapp.generated.resources.liked_songs_count
+import simpmusic.composeapp.generated.resources.local_files
 import simpmusic.composeapp.generated.resources.most_played
 
 /**
  * The collections at the top of the Your library tab: Favorite as the wide card, then Followed,
  * Most played and Downloaded — and on Android, Cached, which turns the row of three into a 2×2
- * grid (Desktop keeps no song cache). Each card fans out the artwork of its newest items; with
+ * grid (Desktop keeps no song cache), plus a wide "On this device" card for local files. Each card fans out the artwork of its newest items; with
  * nothing in it yet the fan is a set of empty dashed sleeves, so a new user sees the same shapes
  * waiting to be filled rather than a blank card. [overview] and [cached] are null until their first
  * read lands, and the cards then draw their titles alone.
@@ -69,6 +70,7 @@ fun LibraryTilingBox(
     navController: NavController,
     overview: LibraryOverview?,
     cached: LibraryCollectionPreview?,
+    local: LibraryCollectionPreview?,
 ) {
     val container = libraryCardColor()
     val open = { type: LibraryDynamicPlaylistType ->
@@ -125,6 +127,14 @@ fun LibraryTilingBox(
                     modifier = Modifier.weight(1f),
                 ) { open(LibraryDynamicPlaylistType.Cached) }
             }
+            CollectionCard(
+                title = Res.string.local_files,
+                preview = local,
+                countText = local?.count?.let { pluralStringResource(Res.plurals.liked_songs_count, it, it) },
+                round = false,
+                container = container,
+                modifier = Modifier.fillMaxWidth(),
+            ) { open(LibraryDynamicPlaylistType.LocalFiles) }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 followedCard(Modifier.weight(1f))

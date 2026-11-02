@@ -14,6 +14,14 @@ val isFullBuild: Boolean =
         false
     }
 
+// A personal build signs release with the keystore named in keystore.properties (gitignored).
+// Such an APK is not signed with the official key, so it skips the unofficial-build check.
+val localSigning: Properties? =
+    rootProject
+        .file("keystore.properties")
+        .takeIf { it.exists() }
+        ?.let { file -> Properties().apply { file.inputStream().use { load(it) } } }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.sentry.gradle)
@@ -38,6 +46,7 @@ android {
             libs.versions.version.name
                 .get()
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("boolean", "CHECK_OFFICIAL_BUILD", "${localSigning == null}")
         multiDexEnabled = true
 
         @Suppress("UnstableApiUsage")
@@ -93,8 +102,20 @@ android {
         }
     }
 
+    if (localSigning != null) {
+        signingConfigs {
+            create("local") {
+                storeFile = rootProject.file(localSigning.getProperty("storeFile"))
+                storePassword = localSigning.getProperty("storePassword")
+                keyAlias = localSigning.getProperty("keyAlias")
+                keyPassword = localSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (localSigning != null) signingConfig = signingConfigs.getByName("local")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

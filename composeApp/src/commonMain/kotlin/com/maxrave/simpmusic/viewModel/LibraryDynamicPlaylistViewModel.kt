@@ -15,6 +15,12 @@ import com.maxrave.domain.repository.CacheRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.utils.toArrayListTrack
 import com.maxrave.domain.utils.toTrack
+import com.maxrave.simpmusic.expect.LocalGroup
+import com.maxrave.simpmusic.expect.LocalGroupBy
+import com.maxrave.simpmusic.expect.LocalSong
+import com.maxrave.simpmusic.expect.groupKey
+import com.maxrave.simpmusic.expect.localGroupsOf
+import com.maxrave.simpmusic.expect.scanLocalSongs
 import com.maxrave.simpmusic.ui.screen.home.analytics.monthFullNameResource
 import com.maxrave.simpmusic.ui.screen.library.LibraryDynamicPlaylistType
 import com.maxrave.simpmusic.viewModel.base.BaseViewModel
@@ -34,6 +40,7 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import simpmusic.composeapp.generated.resources.Res
 import simpmusic.composeapp.generated.resources.playlist
+import simpmusic.composeapp.generated.resources.unknown
 import simpmusic.composeapp.generated.resources.wrapped_recap_month
 import simpmusic.composeapp.generated.resources.wrapped_recap_month_year
 
@@ -93,6 +100,29 @@ class LibraryDynamicPlaylistViewModel(
     private val _listCachedSong: MutableStateFlow<List<SongEntity>> = MutableStateFlow(emptyList())
     val listCachedSong: StateFlow<List<SongEntity>> get() = _listCachedSong
     private var cachedSongJob: Job? = null
+
+    /** Songs on the device's own storage. Read on demand: MediaStore is no table to observe. */
+    private val _allLocalSong: MutableStateFlow<List<LocalSong>> = MutableStateFlow(emptyList())
+
+    /** Whether the local songs are split by folder, album or artist. */
+    private val _localGroupBy: MutableStateFlow<LocalGroupBy> = MutableStateFlow(LocalGroupBy.FOLDER)
+    val localGroupBy: StateFlow<LocalGroupBy> get() = _localGroupBy
+
+    /** The groups the local songs fall into under [localGroupBy]; each is a playlist of its own. */
+    private val _localGroups: MutableStateFlow<List<LocalGroup>> = MutableStateFlow(emptyList())
+    val localGroups: StateFlow<List<LocalGroup>> get() = _localGroups
+
+    /** The key of the group picked on the local files screen, or null for every song. */
+    private val _selectedLocalGroup: MutableStateFlow<String?> = MutableStateFlow(null)
+    val selectedLocalGroup: StateFlow<String?> get() = _selectedLocalGroup
+
+    /**
+     * The local songs on screen: those of [selectedLocalGroup], or all of them. Play, shuffle and
+     * the song count all read this, so they follow the group picked.
+     */
+    private val _listLocalSong: MutableStateFlow<List<SongEntity>> = MutableStateFlow(emptyList())
+    val listLocalSong: StateFlow<List<SongEntity>> get() = _listLocalSong
+    private var localSongJob: Job? = null
 
     init {
         getFavoriteSong()
@@ -202,6 +232,44 @@ class LibraryDynamicPlaylistViewModel(
             }
     }
 
+    fun getLocalSong() {
+        localSongJob?.cancel()
+        localSongJob =
+            viewModelScope.launch {
+                _allLocalSong.value = scanLocalSongs()
+                regroupLocalSongs()
+            }
+    }
+
+    fun setLocalGroupBy(groupBy: LocalGroupBy) {
+        if (_localGroupBy.value == groupBy) return
+        _localGroupBy.value = groupBy
+        // A key means nothing under another split: start from every song.
+        _selectedLocalGroup.value = null
+        viewModelScope.launch { regroupLocalSongs() }
+    }
+
+    fun selectLocalGroup(key: String?) {
+        _selectedLocalGroup.value = key
+        filterLocalSongs()
+    }
+
+    private suspend fun regroupLocalSongs() {
+        _localGroups.value = localGroupsOf(_allLocalSong.value, _localGroupBy.value, getString(Res.string.unknown))
+        // A group emptied or removed since the last visit falls back to every song.
+        if (_localGroups.value.none { it.key == _selectedLocalGroup.value }) _selectedLocalGroup.value = null
+        filterLocalSongs()
+    }
+
+    private fun filterLocalSongs() {
+        val key = _selectedLocalGroup.value
+        val groupBy = _localGroupBy.value
+        _listLocalSong.value =
+            _allLocalSong.value
+                .filter { key == null || it.groupKey(groupBy) == key }
+                .map { it.song }
+    }
+
     fun removeFromCache(videoId: String) {
         viewModelScope.launch {
             cacheRepository.removeCachedSong(videoId)
@@ -235,6 +303,9 @@ class LibraryDynamicPlaylistViewModel(
                 is LibraryDynamicPlaylistType.MonthlyRecap -> loadedRecapName ?: getString(type.name())
                 is LibraryDynamicPlaylistType.ArtistLiked ->
                     listOfNotNull(getString(type.name()), _artistLikedName.value).joinToString(" · ")
+                // A queue started from one folder, album or artist is named after it.
+                LibraryDynamicPlaylistType.LocalFiles ->
+                    _localGroups.value.find { it.key == _selectedLocalGroup.value }?.name ?: getString(type.name())
                 else -> getString(type.name())
             }
         return "${getString(Res.string.playlist)} $name"
@@ -249,6 +320,7 @@ class LibraryDynamicPlaylistViewModel(
                 LibraryDynamicPlaylistType.Favorite -> listFavoriteSong.value to listFavoriteSong.value.find { it.videoId == videoId }
                 LibraryDynamicPlaylistType.Downloaded -> listDownloadedSong.value to listDownloadedSong.value.find { it.videoId == videoId }
                 LibraryDynamicPlaylistType.Cached -> listCachedSong.value to listCachedSong.value.find { it.videoId == videoId }
+                LibraryDynamicPlaylistType.LocalFiles -> listLocalSong.value to listLocalSong.value.find { it.videoId == videoId }
                 LibraryDynamicPlaylistType.Followed -> return
                 LibraryDynamicPlaylistType.MostPlayed -> listMostPlayedSong.value to listMostPlayedSong.value.find { it.videoId == videoId }
                 is LibraryDynamicPlaylistType.MonthlyRecap ->
@@ -280,6 +352,7 @@ class LibraryDynamicPlaylistViewModel(
             LibraryDynamicPlaylistType.Favorite -> listFavoriteSong.value
             LibraryDynamicPlaylistType.Downloaded -> listDownloadedSong.value
             LibraryDynamicPlaylistType.Cached -> listCachedSong.value
+            LibraryDynamicPlaylistType.LocalFiles -> listLocalSong.value
             LibraryDynamicPlaylistType.MostPlayed -> listMostPlayedSong.value
             is LibraryDynamicPlaylistType.MonthlyRecap -> listMonthlyRecapSong.value
             is LibraryDynamicPlaylistType.ArtistLiked -> listArtistLikedSong.value

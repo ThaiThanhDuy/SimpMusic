@@ -19,6 +19,7 @@ crowdin.yml
 .kotlin/
 .idea
 /simpmusic.jks
+/keystore.properties
 /ffmpeg-kit/build/
 
 #dev files
@@ -47,3 +48,4 @@ sentry.properties
 /desktopApp/generated.conveyor.conf
 # Conveyor output directory
 /output/
+/*.apk

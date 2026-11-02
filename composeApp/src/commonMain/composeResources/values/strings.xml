@@ -127,6 +127,9 @@
     <string name="player_cache">Player Cache</string>
     <string name="downloaded_cache">Downloaded Cache</string>
     <string name="cached">Cached</string>
+    <string name="local_files">On this device</string>
+    <string name="local_files_permission_denied">Allow access to music to see the songs on this device</string>
+    <string name="local_folders">Folders</string>
     <string name="remove_from_cache">Remove from cache</string>
     <string name="thumbnail_cache">Thumbnail Cache</string>
     <string name="backup">Backup</string>

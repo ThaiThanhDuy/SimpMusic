@@ -125,6 +125,9 @@
     <string name="player_cache">Cache của trình phát nhạc</string>
     <string name="downloaded_cache">Nội dung đã tải xuống</string>
     <string name="cached">Đã lưu trong bộ nhớ đệm</string>
+    <string name="local_files">Trên thiết bị</string>
+    <string name="local_files_permission_denied">Hãy cho phép truy cập nhạc để xem các bài hát trên thiết bị</string>
+    <string name="local_folders">Thư mục</string>
     <string name="remove_from_cache">Xoá khỏi bộ nhớ đệm</string>
     <string name="thumbnail_cache">Ảnh đã tải xuống</string>
     <string name="backup">Sao lưu</string>
